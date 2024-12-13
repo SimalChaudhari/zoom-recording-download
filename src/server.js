@@ -7,6 +7,11 @@ const app = express();
 app.use(express.json());
 
 // Routes
+// Root Endpoint
+app.get('/', (req, res) => {
+  res.send('Node.js App Deployed Successfully!');
+});
+
 app.use('/zoom', zoomRoutes);
 
 // Start server
