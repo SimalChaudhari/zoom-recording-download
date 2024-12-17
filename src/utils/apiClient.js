@@ -4,6 +4,7 @@ const credentials = require('../config/env');
 const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
+const moment = require('moment');
 
 // Generate Zoom access token using client credentials
 async function getAccessToken() {
@@ -32,7 +33,7 @@ async function getAccessToken() {
 
 // Fetch Zoom recordings
 async function fetchRecordings(accessToken, userId, fromDate, toDate) {
-  const baseUrl = `https://api.zoom.us/v2/users/${userId}/recordings`;
+  const baseUrl = `${credentials.zoomCloudApi}/users/${userId}/recordings`;
   let allRecordings = [];
   let nextPageToken = null;
 
@@ -64,11 +65,20 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
 
 
 // Download Recording Function
-async function downloadRecording(downloadUrl, fileName, file) {
+async function downloadRecording(downloadUrl, fileName, file, meeting) {
   try {
     // Extract the date from recording_start and create a folder
-    const recordingDate = file?.recording_start.split('T')[0];
-    const downloadsFolder = path.resolve(__dirname, `../downloads/${recordingDate}`);
+    const recordingDate = file?.recording_start.split('T')[0]; // Extract recording date (e.g., "2024-06-17")
+    const year = recordingDate.split('-')[0]; // Dynamically extract the year (2024)
+    const formattedDate = moment(recordingDate).format('DD MMM YYYY'); // "17 Dec 2024"
+    
+    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/); 
+    const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
+
+    // Create dynamic folder name: E150v 17 Dec 2024 inside Yr2024
+    const folderName = `${courseCode} ${formattedDate}`;
+    const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}/${folderName}`);
+
 
     // Ensure the folder exists
     if (!fs.existsSync(downloadsFolder)) {
@@ -106,11 +116,20 @@ async function downloadRecording(downloadUrl, fileName, file) {
 }
 
 // Download Attendance Function
-async function downloadAttendance(accessToken, meetingId) {
+async function downloadAttendance(accessToken, meeting) {
   try {
-    const encodedMeetingId = encodeURIComponent(meetingId);
+    const encodedMeetingId = encodeURIComponent(meeting.uuid);
+      
+    const recordingDate = meeting?.start_time.split('T')[0]; // Extract recording date (e.g., "2024-06-17")
+    const year = recordingDate.split('-')[0]; // Dynamically extract the year (2024)
+    const formattedDate = moment(recordingDate).format('DD MMM YYYY'); // "17 Dec 2024"
+    
+    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/); 
+    const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
+   
+
     // Fetch participants from Zoom API
-    const url = `https://api.zoom.us/v2/report/meetings/${encodedMeetingId}/participants`;
+    const url = `${credentials.zoomCloudApi}/report/meetings/${encodedMeetingId}/participants`;
     const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -119,12 +138,12 @@ async function downloadAttendance(accessToken, meetingId) {
 
     const participants = response.data.participants;
     if (!participants || participants.length === 0) {
-      console.log(`No participants found for meeting ${meetingId}`);
+      console.log(`No participants found for meeting ${meeting.uuid}`);
       return;
     }
 
     // Create a download folder based on meeting date
-    const downloadsFolder = path.resolve(__dirname, `../downloads/attendance/${meetingId}`);
+    const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}`);
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
@@ -144,24 +163,23 @@ async function downloadAttendance(accessToken, meetingId) {
     ];
 
     // Add Rows to Worksheet
-    console.log({participants})
     participants.forEach((participant) => {
       worksheet.addRow(participant);
     });
 
     // Define File Path and Save File
-    const filePath = path.join(downloadsFolder, `attendance-${meetingId}.xlsx`);
+    const filePath = path.join(downloadsFolder, `Attendance_${courseCode} (${formattedDate}).xlsx`);
     await workbook.xlsx.writeFile(filePath);
     console.log(`Attendance report saved at: ${filePath}`);
   } catch (error) {
     // console.log({error})
-    console.error(`Error downloading attendance for meeting ${meetingId}:`, error.message);
+    console.error(`Error downloading attendance for meeting ${meeting?.topic}:`, error.message);
     throw error;
   }
 }
 
 async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
-  const url = 'https://api.zoom.us/v2/users';
+  const url = `${credentials.zoomCloudApi}/users`;
   let allUserRecordings = [];
 
   try {

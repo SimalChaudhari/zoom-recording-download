@@ -12,7 +12,7 @@ async function handleWebhook(req, res) {
 
       // Download attendance report
       if (meeting.uuid) {
-        await downloadAttendance(accessToken, meeting.uuid);
+        await downloadAttendance(accessToken, meeting);
         console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
       }
 
@@ -20,7 +20,7 @@ async function handleWebhook(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, accessToken);
+        await downloadRecording(downloadUrl, fileName, file, meeting);
       }
       console.log('Recordings downloaded successfully.');
     }
@@ -48,15 +48,14 @@ async function handleManualDownload(req, res) {
     const allRecordings = await fetchAllUserRecordings(accessToken, fromDate, toDate);
 
     for (const meeting of allRecordings) {
-
       if (meeting?.uuid) {
-        await downloadAttendance(accessToken, meeting.uuid);
+        await downloadAttendance(accessToken, meeting);
       }
 
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, accessToken);
+        await downloadRecording(downloadUrl, fileName, file, meeting);
       }
     }
 
@@ -100,7 +99,7 @@ async function handleManualDownloadByUser(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, accessToken);
+        await downloadRecording(downloadUrl, fileName, file, meeting);
       }
     }
 
