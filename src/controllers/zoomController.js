@@ -1,4 +1,4 @@
-const { getAccessToken, fetchRecordings, downloadRecording, downloadAttendance, fetchAllUserRecordings } = require('../utils/apiClient');
+const { getAccessToken, fetchRecordings, downloadRecording, deleteRecording, downloadAttendance, fetchAllUserRecordings } = require('../utils/apiClient');
 const moment = require('moment');
 
 async function handleWebhook(req, res) {
@@ -20,7 +20,21 @@ async function handleWebhook(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, meeting);
+        // await downloadRecording(downloadUrl, fileName, file, meeting);
+        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+        if (isDownloaded) {
+          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+
+          if (deleteResponse.success) {
+            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
+          } else {
+            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+          }
+        } else {
+          console.error(`Failed to download recording: ${fileName}`);
+        }
+
       }
       console.log('Recordings downloaded successfully.');
     }
@@ -55,7 +69,21 @@ async function handleManualDownload(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, meeting);
+        // await downloadRecording(downloadUrl, fileName, file, meeting);
+
+        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+        if (isDownloaded) {
+          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+
+          if (deleteResponse.success) {
+            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
+          } else {
+            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+          }
+        } else {
+          console.error(`Failed to download recording: ${fileName}`);
+        }
       }
     }
 
@@ -99,7 +127,21 @@ async function handleManualDownloadByUser(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        await downloadRecording(downloadUrl, fileName, file, meeting);
+        // await downloadRecording(downloadUrl, fileName, file, meeting);
+
+        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+        if (isDownloaded) {
+          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+
+          if (deleteResponse.success) {
+            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
+          } else {
+            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+          }
+        } else {
+          console.error(`Failed to download recording: ${fileName}`);
+        }
       }
     }
 

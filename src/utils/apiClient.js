@@ -53,7 +53,7 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
 
       const data = response.data;
       allRecordings = allRecordings.concat(data.meetings);
-      nextPageToken = data.next_page_token; // Continue if there's a next page
+      nextPageToken = data.next_page_token;
     } while (nextPageToken);
 
     return allRecordings;
@@ -63,29 +63,24 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
   }
 }
 
-
 // Download Recording Function
 async function downloadRecording(downloadUrl, fileName, file, meeting) {
   try {
-    // Extract the date from recording_start and create a folder
-    const recordingDate = file?.recording_start.split('T')[0]; // Extract recording date (e.g., "2024-06-17")
-    const year = recordingDate.split('-')[0]; // Dynamically extract the year (2024)
-    const formattedDate = moment(recordingDate).format('DD MMM YYYY'); // "17 Dec 2024"
-    
-    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/); 
+    const recordingDate = file?.recording_start.split('T')[0];
+    const year = recordingDate.split('-')[0];
+    const formattedDate = moment(recordingDate).format('DD MMM YYYY');
+
+    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/);
     const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
 
-    // Create dynamic folder name: E150v 17 Dec 2024 inside Yr2024
+    // Create a dynamic folder
     const folderName = `${courseCode} ${formattedDate}`;
     const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}/${folderName}`);
 
-
-    // Ensure the folder exists
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
 
-    // Full file path
     const filePath = path.join(downloadsFolder, fileName);
 
     // Download the recording
@@ -98,15 +93,14 @@ async function downloadRecording(downloadUrl, fileName, file, meeting) {
     const writer = fs.createWriteStream(filePath);
     response.data.pipe(writer);
 
-    // Wait for download completion
     return new Promise((resolve, reject) => {
       writer.on('finish', () => {
         console.log(`Downloaded: ${filePath}`);
-        resolve(filePath);
+        resolve(true);  // Successfully downloaded
       });
       writer.on('error', (error) => {
         console.error(`Error downloading ${fileName}:`, error.message);
-        reject(error);
+        reject(false);  // Download failed
       });
     });
   } catch (error) {
@@ -119,16 +113,14 @@ async function downloadRecording(downloadUrl, fileName, file, meeting) {
 async function downloadAttendance(accessToken, meeting) {
   try {
     const encodedMeetingId = encodeURIComponent(meeting.uuid);
-      
-    const recordingDate = meeting?.start_time.split('T')[0]; // Extract recording date (e.g., "2024-06-17")
-    const year = recordingDate.split('-')[0]; // Dynamically extract the year (2024)
-    const formattedDate = moment(recordingDate).format('DD MMM YYYY'); // "17 Dec 2024"
-    
-    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/); 
-    const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
-   
+    const recordingDate = meeting?.start_time.split('T')[0];
+    const year = recordingDate.split('-')[0];
+    const formattedDate = moment(recordingDate).format('DD MMM YYYY');
 
-    // Fetch participants from Zoom API
+    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/);
+    const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
+
+    // Fetch participants
     const url = `${credentials.zoomCloudApi}/report/meetings/${encodedMeetingId}/participants`;
     const response = await axios.get(url, {
       headers: {
@@ -142,17 +134,17 @@ async function downloadAttendance(accessToken, meeting) {
       return;
     }
 
-    // Create a download folder based on meeting date
+    // Define download folder
     const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}`);
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
 
-    // Create an Excel Workbook and Worksheet
+    // Create Excel workbook and worksheet
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Attendance');
 
-    // Define Columns for Excel File
+    // Define worksheet columns
     worksheet.columns = [
       { header: 'Participant ID', key: 'user_id', width: 20 },
       { header: 'Name', key: 'name', width: 25 },
@@ -162,17 +154,16 @@ async function downloadAttendance(accessToken, meeting) {
       { header: 'Duration (Minutes)', key: 'duration', width: 20 },
     ];
 
-    // Add Rows to Worksheet
+    // Add rows
     participants.forEach((participant) => {
       worksheet.addRow(participant);
     });
 
-    // Define File Path and Save File
+    // Save the Excel file
     const filePath = path.join(downloadsFolder, `Attendance_${courseCode} (${formattedDate}).xlsx`);
     await workbook.xlsx.writeFile(filePath);
     console.log(`Attendance report saved at: ${filePath}`);
   } catch (error) {
-    // console.log({error})
     console.error(`Error downloading attendance for meeting ${meeting?.topic}:`, error.message);
     throw error;
   }
@@ -202,4 +193,22 @@ async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
   }
 }
 
-module.exports = { getAccessToken, fetchRecordings, downloadRecording, downloadAttendance, fetchAllUserRecordings };
+async function deleteRecording(accessToken, meetingUuid, fileId) {
+  try {
+    const url = `${credentials.zoomCloudApi}/meetings/${meetingUuid}/recordings/${fileId}`;
+    const response = await axios.delete(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    console.log(`Recording with file ID ${fileId} deleted successfully.`);
+    return response.data || { success: true, message: 'Recording deleted successfully' };
+  } catch (error) {
+    console.error('Error deleting recording:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+
+module.exports = { getAccessToken, fetchRecordings, downloadRecording, downloadAttendance, fetchAllUserRecordings, deleteRecording };
