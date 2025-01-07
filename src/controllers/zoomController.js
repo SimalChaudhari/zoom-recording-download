@@ -60,7 +60,7 @@ async function handleManualDownload(req, res) {
 
     const accessToken = await getAccessToken();
     const allRecordings = await fetchAllUserRecordings(accessToken, fromDate, toDate);
-
+    console.log({allRecordings});
     for (const meeting of allRecordings) {
       if (meeting?.uuid) {
         await downloadAttendance(accessToken, meeting);
@@ -74,13 +74,13 @@ async function handleManualDownload(req, res) {
         const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
         if (isDownloaded) {
-          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+          // const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
 
-          if (deleteResponse.success) {
-            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
-          } else {
-            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
-          }
+          // if (deleteResponse.success) {
+            console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
+          // } else {
+          //   console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+          // }
         } else {
           console.error(`Failed to download recording: ${fileName}`);
         }

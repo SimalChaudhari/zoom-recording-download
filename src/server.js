@@ -28,6 +28,9 @@ app.get('/', (req, res) => {
 // Zoom Routes
 app.use('/zoom', zoomRoutes);
 
+// Start cron jobs
+require('./jobs/cronJob');
+
 // Start server
 app.listen(config.port, () => {
   console.log(`Server running on port ${config.port}`);
