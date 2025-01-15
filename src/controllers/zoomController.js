@@ -1,4 +1,6 @@
-const { getAccessToken, fetchRecordings, downloadRecording, deleteRecording, downloadAttendance, fetchAllUserRecordings } = require('../utils/apiClient');
+
+const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording } = require('../services/zoomService');
+const { getAccessToken} = require('../utils/apiClient');
 const moment = require('moment');
 
 async function handleWebhook(req, res) {
@@ -8,11 +10,10 @@ async function handleWebhook(req, res) {
     // Ensure the event type is correct
     if (event === 'recording.completed') {
       const meeting = payload.object;
-      const accessToken = await getAccessToken();
 
       // Download attendance report
       if (meeting.uuid) {
-        await downloadAttendance(accessToken, meeting);
+        await downloadAttendanceReport(meeting);
         console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
       }
 
@@ -24,9 +25,9 @@ async function handleWebhook(req, res) {
         const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
         if (isDownloaded) {
-          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+          const deleteResponse = await deleteRecording(meeting.uuid, file.id);
 
-          if (deleteResponse.success) {
+          if (deleteResponse) {
             console.log(`Recording deleted from Zoom cloud: ${fileName}`);
           } else {
             console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
@@ -56,12 +57,17 @@ async function handleManualDownload(req, res) {
     fromDate = fromDate || today;
     toDate = toDate || today;
 
-    console.log(`Fetching recordings from ${fromDate} to ${toDate}`);
+    // Convert to start and end of the day for the given dates
+    const startOfDay = moment(fromDate).startOf('day').format('YYYY-MM-DD HH:mm:ss');
+    const endOfDay = moment(toDate).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+
+    console.log(`Fetching recordings from ${startOfDay} to ${endOfDay}`);
 
     const accessToken = await getAccessToken();
-    const allRecordings = await fetchAllUserRecordings(accessToken, fromDate, toDate);
-    console.log({allRecordings});
+    const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay);
+    console.log({allRecordings})
     for (const meeting of allRecordings) {
+     
       if (meeting?.uuid) {
         await downloadAttendance(accessToken, meeting);
       }
@@ -69,15 +75,14 @@ async function handleManualDownload(req, res) {
       for (const file of meeting.recording_files) {
         const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
         const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        // await downloadRecording(downloadUrl, fileName, file, meeting);
 
         const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
         if (isDownloaded) {
+          console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
           // const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
 
           // if (deleteResponse.success) {
-            console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
           // } else {
           //   console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
           // }
@@ -87,10 +92,18 @@ async function handleManualDownload(req, res) {
       }
     }
 
-    res.status(200).send('Recordings and attendance downloaded successfully.');
+    if (res) {
+      res.status(200).send('Recordings and attendance downloaded successfully.');
+    } else {
+      console.log('Recordings and attendance downloaded successfully (cron job)');
+    }
   } catch (error) {
-    console.error('Error downloading recordings:', error.message);
-    res.status(500).send('Internal Server Error');
+    console.error('Error downloading recordings:', error);
+    if (res) {
+      res.status(500).send('Internal Server Error');
+    } else {
+      console.error('Cron job failed: Error downloading recordings');
+    }
   }
 }
 
@@ -152,5 +165,22 @@ async function handleManualDownloadByUser(req, res) {
   }
 }
 
+/**
+ * Parses and validates date range from query parameters.
+ * Defaults to today's date if parameters are missing.
+ * @param {Object} query - Query parameters.
+ * @returns {Object} Parsed date range.
+ */
+function parseDateRange(query) {
+  const today = moment().format('YYYY-MM-DD');
+  const fromDate = query.fromDate || today;
+  const toDate = query.toDate || today;
+
+  if (moment(fromDate).isAfter(toDate)) {
+    throw new Error('Invalid date range: "fromDate" cannot be after "toDate".');
+  }
+
+  return { fromDate, toDate };
+}
 
 module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser };

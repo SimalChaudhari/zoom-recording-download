@@ -1,19 +1,13 @@
 const jwt = require("jsonwebtoken");
-const { clientId, clientSecret } = require("../config/env");
+const credentials = require("../config/env");
 
-const generateZoomToken = () => {
-    const payload = {
-        iss: clientId, // Client ID
-        exp: Math.floor(Date.now() / 1000) + 60 * 60, // Token expiration time
-    };
+function generateZoomToken() {
+  const payload = {
+    iss: credentials.clientId,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60, // Token valid for 1 hour
+  };
 
-    const secret = clientSecret; // Secret from .env
-
-    if (!secret) {
-        throw new Error('ZOOM_CLIENT_SECRET is missing in the environment variables.');
-    }
-
-    return jwt.sign(payload, secret);
-};
+  return jwt.sign(payload, credentials.clientSecret);
+}
 
 module.exports = { generateZoomToken };
