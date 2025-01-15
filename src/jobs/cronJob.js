@@ -12,6 +12,8 @@ cron.schedule('58 23 * * *', async () => {
     const fromDate = moment().startOf('day').format('YYYY-MM-DD');
     const toDate = moment().endOf('day').format('YYYY-MM-DD');
 
+    console.log(`Processing recordings for date range: ${fromDate} to ${toDate}`);
+
     // Execute the function with the date range
     await handleManualDownload({ query: { fromDate, toDate } });
     console.log('Cron job completed successfully');
