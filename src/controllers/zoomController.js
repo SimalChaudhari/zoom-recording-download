@@ -1,108 +1,167 @@
 
 const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording } = require('../services/zoomService');
-const { getAccessToken} = require('../utils/apiClient');
+const { getAccessToken } = require('../utils/apiClient');
 const moment = require('moment');
 
 async function handleWebhook(req, res) {
   try {
     const { event, payload } = req.body;
 
+    // Validate webhook payload
+    if (!event || !payload?.object) {
+      throw new Error('Invalid webhook payload: Missing event or payload data.');
+    }
+
     // Ensure the event type is correct
     if (event === 'recording.completed') {
       const meeting = payload.object;
 
+      console.log(`Processing recording.completed event for meeting: ${meeting.uuid}`);
+
+      // Validate meeting data
+      if (!meeting.uuid || !meeting.recording_files || meeting.recording_files.length === 0) {
+        throw new Error('Invalid meeting data: Missing UUID or recording files.');
+      }
+
+      // Fetch Zoom access token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Failed to retrieve Zoom access token.');
+      }
+
       // Download attendance report
-      if (meeting.uuid) {
-        await downloadAttendanceReport(meeting);
-        console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
+      try {
+        await downloadAttendance(accessToken, meeting);
+        console.log(`Attendance report downloaded for meeting: ${meeting.uuid}`);
+      } catch (attendanceError) {
+        console.error(`Error downloading attendance for meeting ${meeting.uuid}:`, attendanceError.message);
       }
 
       // Download recordings
       for (const file of meeting.recording_files) {
-        const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
-        const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        // await downloadRecording(downloadUrl, fileName, file, meeting);
-        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+        try {
+          const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
+          const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
 
-        if (isDownloaded) {
-          const deleteResponse = await deleteRecording(meeting.uuid, file.id);
+          const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
-          if (deleteResponse) {
-            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
+          if (isDownloaded) {
+            try {
+              const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+              if (deleteResponse.success) {
+                console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
+              } else {
+                console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+              }
+            } catch (deleteError) {
+              console.error(`Error deleting recording ${fileName}:`, deleteError.message);
+            }
           } else {
-            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+            console.error(`Failed to download recording: ${fileName}`);
           }
-        } else {
-          console.error(`Failed to download recording: ${fileName}`);
+        } catch (fileError) {
+          console.error(`Error processing recording file (${file.id}):`, fileError.message);
         }
-
       }
-      console.log('Recordings downloaded successfully.');
+
+      console.log('All recordings processed successfully.');
+    } else {
+      console.warn(`Unhandled webhook event type: ${event}`);
     }
 
     res.status(200).send('Webhook processed successfully.');
   } catch (error) {
     console.error('Webhook error:', error.message);
-    res.status(500).send('Internal Server Error');
+    res.status(500).send({
+      message: 'Internal Server Error while processing webhook.',
+      error: error.message,
+    });
   }
 }
 
 async function handleManualDownload(req, res) {
   try {
-    // Extract query parameters
+    // Extract and validate query parameters
     let { fromDate, toDate } = req.query;
-
-    // Use today's date if dates are not provided
     const today = moment().format('YYYY-MM-DD');
+
+    // Default to today's date if no date range is provided
     fromDate = fromDate || today;
     toDate = toDate || today;
+
+    if (moment(fromDate).isAfter(toDate)) {
+      throw new Error('Invalid date range: "fromDate" cannot be after "toDate".');
+    }
 
     // Convert to start and end of the day for the given dates
     const startOfDay = moment(fromDate).startOf('day').format('YYYY-MM-DD HH:mm:ss');
     const endOfDay = moment(toDate).endOf('day').format('YYYY-MM-DD HH:mm:ss');
-
     console.log(`Fetching recordings from ${startOfDay} to ${endOfDay}`);
 
+    // Get Zoom access token
     const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error('Failed to retrieve Zoom access token.');
+    }
+
+    // Fetch all recordings within the date range
     const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay);
-    console.log({allRecordings})
+    console.log(`Total meetings fetched: ${allRecordings.length}`);
+
     for (const meeting of allRecordings) {
-     
-      if (meeting?.uuid) {
-        await downloadAttendance(accessToken, meeting);
-      }
+      try {
+        console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
 
-      for (const file of meeting.recording_files) {
-        const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
-        const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-
-        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
-
-        if (isDownloaded) {
-          console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
-          // const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
-
-          // if (deleteResponse.success) {
-          // } else {
-          //   console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
-          // }
-        } else {
-          console.error(`Failed to download recording: ${fileName}`);
+        // Download attendance report
+        if (meeting?.uuid) {
+          await downloadAttendance(accessToken, meeting);
+          console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
         }
+
+        // Download recordings
+        for (const file of meeting.recording_files) {
+          try {
+            const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
+            const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
+
+            const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+            if (isDownloaded) {
+              const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+              if (deleteResponse.success) {
+                console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
+              } else {
+                console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+              }
+            } else {
+              console.error(`Failed to download recording: ${fileName}`);
+            }
+          } catch (fileError) {
+            console.error(`Error processing recording file (${file.id}):`, fileError.message);
+          }
+        }
+      } catch (meetingError) {
+        console.error(`Error processing meeting (${meeting.uuid}):`, meetingError.message);
       }
     }
 
+    // Final response
     if (res) {
       res.status(200).send('Recordings and attendance downloaded successfully.');
     } else {
-      console.log('Recordings and attendance downloaded successfully (cron job)');
+      console.log('Recordings and attendance downloaded successfully (cron job).');
     }
   } catch (error) {
-    console.error('Error downloading recordings:', error);
+    console.error('Error downloading recordings:', error.message);
+
+    // Return error response
     if (res) {
-      res.status(500).send('Internal Server Error');
+      res.status(500).send({
+        message: 'Failed to download recordings and attendance.',
+        error: error.message,
+      });
     } else {
-      console.error('Cron job failed: Error downloading recordings');
+      console.error('Cron job failed: Error downloading recordings.');
     }
   }
 }
@@ -111,76 +170,88 @@ async function handleManualDownloadByUser(req, res) {
   try {
     const { userId, fromDate, toDate } = req.query;
 
+    // Validate User ID
     if (!userId) {
-      return res.status(400).send('User ID is required.');
+      return res.status(400).send({ message: 'User ID is required.' });
     }
 
-    // Use current date if fromDate or toDate is missing
+    // Set date range defaults
     const today = moment().format('YYYY-MM-DD');
     const startDate = fromDate || today;
     const endDate = toDate || today;
 
-    console.log(`Fetching recordings for ${userId} from ${startDate} to ${endDate}`);
+    // Validate date range
+    if (moment(startDate).isAfter(endDate)) {
+      return res.status(400).send({ message: '"fromDate" cannot be after "toDate".' });
+    }
 
+    console.log(`Fetching recordings for user: ${userId} from ${startDate} to ${endDate}`);
+
+    // Fetch Zoom access token
     const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error('Failed to retrieve Zoom access token.');
+    }
 
-    // Fetch recordings for the specific user
+    // Fetch recordings for the specified user
     const recordings = await fetchRecordings(accessToken, userId, startDate, endDate);
+    console.log(`Total meetings fetched for user ${userId}: ${recordings.length}`);
 
     for (const meeting of recordings) {
-      console.log(`Processing meeting: ${meeting.uuid}`);
+      try {
+        console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
 
-      // Download attendance if available
-      if (meeting?.uuid) {
-        await downloadAttendance(accessToken, meeting.uuid);
-        console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
-      }
-
-      // Download recordings
-      for (const file of meeting.recording_files) {
-        const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
-        const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-        // await downloadRecording(downloadUrl, fileName, file, meeting);
-
-        const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
-
-        if (isDownloaded) {
-          const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
-
-          if (deleteResponse.success) {
-            console.log(`Recording deleted from Zoom cloud: ${fileName}`);
-          } else {
-            console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+        // Download attendance report if available
+        if (meeting?.uuid) {
+          try {
+            await downloadAttendance(accessToken, meeting);
+            console.log(`Attendance report downloaded for meeting: ${meeting.uuid}`);
+          } catch (attendanceError) {
+            console.error(`Error downloading attendance for meeting ${meeting.uuid}:`, attendanceError.message);
           }
-        } else {
-          console.error(`Failed to download recording: ${fileName}`);
         }
+
+        // Download and process each recording file
+        for (const file of meeting.recording_files) {
+          try {
+            const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
+            const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
+
+            const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+            if (isDownloaded) {
+              try {
+                const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+                if (deleteResponse.success) {
+                  console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
+                } else {
+                  console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+                }
+              } catch (deleteError) {
+                console.error(`Error deleting recording ${fileName}:`, deleteError.message);
+              }
+            } else {
+              console.error(`Failed to download recording: ${fileName}`);
+            }
+          } catch (fileError) {
+            console.error(`Error processing recording file (${file.id}):`, fileError.message);
+          }
+        }
+      } catch (meetingError) {
+        console.error(`Error processing meeting (${meeting.uuid}):`, meetingError.message);
       }
     }
 
-    res.status(200).send('Recordings and attendance downloaded successfully.');
+    res.status(200).send({
+      message: 'Recordings and attendance downloaded successfully.',
+    });
   } catch (error) {
     console.error('Error downloading recordings:', error.message);
-    res.status(500).send('Internal Server Error');
+    res.status(500).send({
+      message: 'Internal Server Error while processing recordings.',
+      error: error.message,
+    });
   }
-}
-
-/**
- * Parses and validates date range from query parameters.
- * Defaults to today's date if parameters are missing.
- * @param {Object} query - Query parameters.
- * @returns {Object} Parsed date range.
- */
-function parseDateRange(query) {
-  const today = moment().format('YYYY-MM-DD');
-  const fromDate = query.fromDate || today;
-  const toDate = query.toDate || today;
-
-  if (moment(fromDate).isAfter(toDate)) {
-    throw new Error('Invalid date range: "fromDate" cannot be after "toDate".');
-  }
-
-  return { fromDate, toDate };
 }
 
 module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser };

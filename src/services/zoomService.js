@@ -67,18 +67,28 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
 // Download Recording Function
 async function downloadRecording(downloadUrl, fileName, file, meeting) {
   try {
-    const recordingDate = file?.recording_start.split('T')[0];
+    // Validate input
+    if (!downloadUrl || !fileName || !file?.recording_start || !meeting?.topic) {
+      throw new Error('Invalid input: Missing required data for downloading recording.');
+    }
+
+    // Extract recording details
+    const recordingDate = file.recording_start.split('T')[0];
     const year = recordingDate.split('-')[0];
     const formattedDate = moment(recordingDate).format('DD MMM YYYY');
     const formattedMonth = moment(recordingDate).format('MMM').toUpperCase();
 
-    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/);
+    const courseCodeMatch = meeting.topic.match(/^[A-Za-z0-9]+/);
     const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
 
-    // Create a dynamic folder
+    // Create a dynamic folder structure
     const folderName = `${courseCode} ${formattedDate}`;
-    const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}/${formattedMonth}/${folderName}`);
+    const downloadsFolder = path.resolve(
+      __dirname,
+      `../downloads/Yr${year}/${formattedMonth}/${folderName}`
+    );
 
+    // Ensure the folder exists
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
@@ -92,38 +102,46 @@ async function downloadRecording(downloadUrl, fileName, file, meeting) {
       responseType: 'stream',
     });
 
+    // Write the file to the folder
     const writer = fs.createWriteStream(filePath);
     response.data.pipe(writer);
 
+    // Handle download completion
     return new Promise((resolve, reject) => {
       writer.on('finish', () => {
-        console.log(`Downloaded: ${filePath}`);
-        resolve(true);  // Successfully downloaded
+        console.log(`Recording successfully downloaded to: ${filePath}`);
+        resolve(true); // Successfully downloaded
       });
       writer.on('error', (error) => {
-        console.error(`Error downloading ${fileName}:`, error.message);
-        reject(false);  // Download failed
+        console.error(`Error downloading recording to ${filePath}:`, error.message);
+        reject(false); // Download failed
       });
     });
   } catch (error) {
-    console.error('Download error:', error.message);
-    throw new Error(error.message);
+    console.error(`Download error for file "${fileName}":`, error.message);
+    throw new Error(`Failed to download recording: ${error.message}`);
   }
 }
 
 // Download Attendance Function
 async function downloadAttendance(accessToken, meeting) {
   try {
+    // Validate input
+    if (!meeting?.uuid || !meeting?.start_time) {
+      throw new Error('Invalid meeting object: Missing required properties.');
+    }
+
+    // Extract meeting details
     const encodedMeetingId = encodeURIComponent(meeting.uuid);
-    const recordingDate = meeting?.start_time.split('T')[0];
+    const recordingDate = meeting.start_time.split('T')[0];
     const year = recordingDate.split('-')[0];
     const formattedDate = moment(recordingDate).format('DD MMM YYYY');
     const formattedMonth = moment(recordingDate).format('MMM').toUpperCase();
 
-    const courseCodeMatch = meeting?.topic.match(/^[A-Za-z0-9]+/);
+    const courseCodeMatch = meeting?.topic?.match(/^[A-Za-z0-9]+/);
     const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
 
-    // Fetch participants
+    // Fetch participants from Zoom API
     const url = `${credentials.zoomCloudApi}/report/meetings/${encodedMeetingId}/participants`;
     const response = await axios.get(url, {
       headers: {
@@ -137,67 +155,70 @@ async function downloadAttendance(accessToken, meeting) {
       return;
     }
 
-    // Create a dynamic folder
+    // Create a dynamic folder structure
     const folderName = `${courseCode} ${formattedDate}`;
-    const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}/${formattedMonth}/${folderName}`);
+    const downloadsFolder = path.resolve(
+      __dirname,
+      `../downloads/Yr${year}/${formattedMonth}/${folderName}`
+    );
 
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
 
+    // Filter for unique users based on email or user ID
+    const uniqueParticipants = participants.filter(
+      (participant, index, self) =>
+        index ===
+        self.findIndex(
+          (t) =>
+            t.user_email === participant.user_email ||
+            t.id === participant.id
+        )
+    );
+
+    // Write the attendance report to a CSV file
     const csvWriter = createCSVWriter({
-        path: path.join(downloadsFolder, `Attendance_${courseCode} (${formattedDate}).csv`),
-        header: [
-            {id:'user_id', title:'Participant ID'},
-            {id:'name', title:'Name'},
-            {id:'user_email', title:'Email'},
-            {id:'join_time', title:'Join Time'},
-            {id:'leave_time', title:'Leave Time'},
-            {id:'duration', title:'Duration (Minutes)'},
-        ]
+      path: path.join(
+        downloadsFolder,
+        `Attendance_${courseCode} (${formattedDate}).csv`
+      ),
+      header: [
+        { id: 'user_id', title: 'Participant ID' },
+        { id: 'name', title: 'Name' },
+        { id: 'user_email', title: 'Email' },
+        { id: 'join_time', title: 'Join Time' },
+        { id: 'leave_time', title: 'Leave Time' },
+        { id: 'duration', title: 'Duration (Minutes)' },
+      ],
     });
-    
 
-    const records = participants.map(item=> ({
-        user_id:item.item,
-        name:item.name,
-        user_email:item.user_email,
-        join_time:item.join_time,
-        leave_time:item.leave_time,
-        duration:item.duration,
-    }))
+    const records = uniqueParticipants.map((participant) => ({
+      user_id: participant.id || 'N/A',
+      name: participant.name || 'N/A',
+      user_email: participant.user_email || 'N/A',
+      join_time: participant.join_time || 'N/A',
+      leave_time: participant.leave_time || 'N/A',
+      duration: participant.duration || 0,
+    }));
 
-    await csvWriter.writeRecords(records)
+    await csvWriter.writeRecords(records);
 
-    // // Create Excel workbook and worksheet
-    // const workbook = new ExcelJS.Workbook();
-    // const worksheet = workbook.addWorksheet('Attendance');
-
-    // // Define worksheet columns
-    // worksheet.columns = [
-    //   { header: 'Participant ID', key: 'user_id', width: 20 },
-    //   { header: 'Name', key: 'name', width: 25 },
-    //   { header: 'Email', key: 'user_email', width: 30 },
-    //   { header: 'Join Time', key: 'join_time', width: 25 },
-    //   { header: 'Leave Time', key: 'leave_time', width: 25 },
-    //   { header: 'Duration (Minutes)', key: 'duration', width: 20 },
-    // ];
-
-    
-    // // Add rows
-    // participants.forEach((participant) => {
-    //   worksheet.addRow(participant);
-    // });
-
-    // // Save the Excel file
-    // const filePath = path.join(downloadsFolder, `Attendance_${courseCode} (${formattedDate}).xlsx`);
-    // await workbook.xlsx.writeFile(filePath);
-    console.log(`Attendance report saved at: ${filePath}`);
+    console.log(
+      `Attendance report saved at: ${path.join(
+        downloadsFolder,
+        `Attendance_${courseCode} (${formattedDate}).csv`
+      )}`
+    );
   } catch (error) {
-    console.error(`Error downloading attendance for meeting ${meeting?.topic}:`, error.message);
-    throw new Error('Failed to process recording files.');
+    console.error(
+      `Error downloading attendance for meeting "${meeting?.topic || 'N/A'}":`,
+      error.message
+    );
+    throw new Error('Failed to download and process attendance data.');
   }
 }
+
 
 async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
   const url = `${credentials.zoomCloudApi}/users`;
