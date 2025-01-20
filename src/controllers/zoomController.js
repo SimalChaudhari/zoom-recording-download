@@ -112,6 +112,12 @@ async function handleManualDownload(req, res) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
 
+        // Ensure `recording_end` is not empty
+        if (!meeting.recording_end || meeting.recording_end.trim() === "") {
+          console.warn(`Skipping meeting (${meeting.uuid}) due to missing recording_end.`);
+          continue;
+        }
+
         // Download attendance report
         if (meeting?.uuid) {
           await downloadAttendance(accessToken, meeting);
