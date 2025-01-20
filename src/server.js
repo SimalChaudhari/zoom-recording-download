@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet'); // For security headers
-const rateLimit = require('express-rate-limit'); // To prevent abuse
 const zoomRoutes = require('./routes/index');
 const meetingRoutes = require('./routes/meetingRoutes');
 const config = require('./config/env');
@@ -14,22 +13,24 @@ app.use(helmet());
 
 // Enable CORS policy
 app.use(cors({
-  origin: ['http://localhost:3000'], // Add allowed domains
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'], // Use environment variable for allowed domains
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Apply rate limiting to all API endpoints
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.',
-});
-app.use(limiter);
-
 // Body Parser
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Health Check Endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'success',
+    message: 'Server is healthy!',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // Root Endpoint
 app.get('/', (req, res) => {
@@ -41,18 +42,33 @@ app.use('/zoom', zoomRoutes);
 app.use('/zoom/meetings', meetingRoutes);
 
 // Start cron jobs
-require('./jobs/cronJob');
+try {
+  require('./jobs/cronJob');
+  console.log('Cron jobs started successfully.');
+} catch (err) {
+  console.error('Error starting cron jobs:', err.message);
+}
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).send({
+  console.error('Error: ', err.stack);
+  res.status(err.status || 500).json({
     error: 'Internal Server Error',
     message: err.message || 'Something went wrong.',
   });
 });
 
 // Start server
-app.listen(config.port, () => {
-  console.log(`Server running on port ${config.port}`);
+const PORT = config.port || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Handle Unhandled Rejections and Exceptions
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1); // Exit process in case of fatal errors
 });
