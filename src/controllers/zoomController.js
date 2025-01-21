@@ -111,12 +111,12 @@ async function handleManualDownload(req, res) {
     for (const meeting of allRecordings) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
-
+        console.log({meeting})
         // Ensure `recording_end` is not empty
-        if (!meeting.recording_end || meeting.recording_end.trim() === "") {
-          console.warn(`Skipping meeting (${meeting.uuid}) due to missing recording_end.`);
-          continue;
-        }
+        // if (!meeting.recording_end || meeting.recording_end.trim() === "") {
+        //   console.warn(`Skipping meeting (${meeting.uuid}) due to missing recording_end.`);
+        //   continue;
+        // }
 
         // Download attendance report
         if (meeting?.uuid) {
@@ -133,7 +133,7 @@ async function handleManualDownload(req, res) {
             const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
             if (isDownloaded) {
-              const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+              const deleteResponse = {success:true};//await deleteRecording(accessToken, meeting.uuid, file.id);
               if (deleteResponse.success) {
                 console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
               } else {
