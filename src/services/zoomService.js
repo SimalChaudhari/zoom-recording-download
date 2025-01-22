@@ -221,7 +221,7 @@ async function downloadAttendance(accessToken, meeting) {
 
 
 async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
-  const url = `${credentials.zoomCloudApi}/users`;
+  const url = `https://api.zoom.us/v2/users`;
   let allUserRecordings = [];
 
   try {
@@ -231,7 +231,7 @@ async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
       },
     });
 
-    const users = response.data.users || [];
+    const users = response?.data?.users || [];
     for (const user of users) {
       const userRecordings = await fetchRecordings(accessToken, user.email, fromDate, toDate);
       allUserRecordings = allUserRecordings.concat(userRecordings);
