@@ -133,7 +133,7 @@ async function handleManualDownload(req, res) {
             const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
 
             if (isDownloaded) {
-              const deleteResponse = {success:true};//await deleteRecording(accessToken, meeting.uuid, file.id);
+              const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
               if (deleteResponse.success) {
                 console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
               } else {
