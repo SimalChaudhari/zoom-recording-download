@@ -108,6 +108,8 @@ async function handleManualDownload(req, res) {
     const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay);
     console.log(`Total meetings fetched: ${allRecordings.length}`);
 
+    // await downloadAttendance(accessToken, {uuid:});
+
     for (const meeting of allRecordings) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
@@ -227,7 +229,7 @@ async function handleManualDownloadByUser(req, res) {
 
             if (isDownloaded) {
               try {
-                const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+                const deleteResponse =  {success: true}//await deleteRecording(accessToken, meeting.uuid, file.id);
                 if (deleteResponse.success) {
                   console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
                 } else {
@@ -260,4 +262,33 @@ async function handleManualDownloadByUser(req, res) {
   }
 }
 
-module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser };
+
+async function fetchAttendanceReportByMeetingId(req, res) {
+  try {
+    const { meetingId, fromDate, toDate } = req.query;
+
+    // Validate input
+    if (!meetingId || !fromDate || !toDate) {
+      throw new Error('Missing required parameters: meetingId, fromDate, or toDate.');
+    }
+
+    // Fetch Zoom access token
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error('Failed to retrieve Zoom access token.');
+    }
+
+    await downloadAttendance(accessToken, {uuid:"ayubCckKREiaMAfkJgX1uQ%3D%3D", start_time: fromDate, end_time:toDate});
+    console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
+
+
+  } catch (error) {
+    console.error('Error fetching attendance report:', error.message);
+    res.status(500).send({
+      message: 'Internal Server Error while fetching attendance report.',
+      error: error.message,
+    });
+  }
+}
+
+module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser, fetchAttendanceReportByMeetingId };

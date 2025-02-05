@@ -3,6 +3,7 @@ const {
   handleWebhook,
   handleManualDownload,
   handleManualDownloadByUser,
+  fetchAttendanceReportByMeetingId,
 } = require('../controllers/zoomController');
 const validateRequest = require('../middlewares/validateRequest'); // Custom validation middleware
 
@@ -23,6 +24,12 @@ router.get(
   '/download-by-user',
   validateRequest(['userId', 'fromDate', 'toDate'], 'query'), // Require query parameters
   handleManualDownloadByUser
+);
+
+router.get(
+  '/fetch-attendance-report',
+  validateRequest(['meetingId', 'fromDate', 'toDate'], 'query'), // Require query parameters
+  fetchAttendanceReportByMeetingId
 );
 
 module.exports = router;

@@ -34,7 +34,7 @@ async function getAccessToken() {
 
 // Fetch Zoom recordings
 async function fetchRecordings(accessToken, userId, fromDate, toDate) {
-  const baseUrl = `${credentials.zoomCloudApi}/users/${userId}/recordings`;
+  const baseUrl = `https://api.zoom.us/v2/users/me/recordings`;
   let allRecordings = [];
   let nextPageToken = null;
 
@@ -51,15 +51,18 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
           next_page_token: nextPageToken,
         },
       });
-
+      console.log('here')
+      
       const data = response.data;
+      console.log({data})
       allRecordings = allRecordings.concat(data.meetings);
       nextPageToken = data.next_page_token;
     } while (nextPageToken);
 
     return allRecordings;
   } catch (error) {
-    console.error(`Error fetching recordings for ${userId}:`, error.response?.data || error.message);
+    console.log({error})
+    // console.error(`Error fetching recordings for ${userId}:`, error.response?.data || error.message);
     throw error;
   }
 }
