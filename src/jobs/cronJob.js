@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const moment = require('moment');
 
-const { handleManualDownload } = require('./../controllers/zoomController');
+const { handleManualDownload, fetchAttendanceReport } = require('./../controllers/zoomController');
 
 // Schedule the job to run daily at 11:58 PM
 cron.schedule('58 23 * * *', async () => {
@@ -16,6 +16,7 @@ cron.schedule('58 23 * * *', async () => {
 
     // Execute the function with the date range
     await handleManualDownload({ query: { fromDate, toDate } });
+    await fetchAttendanceReport({ query: { fromDate, toDate } });
     console.log('Cron job completed successfully');
   } catch (error) {
     console.error('Error in cron job:', error.message);

@@ -2,6 +2,7 @@
 const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording } = require('../services/zoomService');
 const { getAccessToken } = require('../utils/apiClient');
 const moment = require('moment');
+const { validateAndFormatDateRange } = require('../utils/helpers');
 
 async function handleWebhook(req, res) {
   try {
@@ -79,23 +80,14 @@ async function handleWebhook(req, res) {
   }
 }
 
+// Main function to handle manual download
 async function handleManualDownload(req, res) {
   try {
     // Extract and validate query parameters
     let { fromDate, toDate } = req.query;
-    const today = moment().format('YYYY-MM-DD');
 
-    // Default to today's date if no date range is provided
-    fromDate = fromDate || today;
-    toDate = toDate || today;
-
-    if (moment(fromDate).isAfter(toDate)) {
-      throw new Error('Invalid date range: "fromDate" cannot be after "toDate".');
-    }
-
-    // Convert to start and end of the day for the given dates
-    const startOfDay = moment(fromDate).startOf('day').format('YYYY-MM-DD HH:mm:ss');
-    const endOfDay = moment(toDate).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+    // Validate and format date range
+    const { startOfDay, endOfDay } = validateAndFormatDateRange(fromDate, toDate);
     console.log(`Fetching recordings from ${startOfDay} to ${endOfDay}`);
 
     // Get Zoom access token
@@ -105,49 +97,14 @@ async function handleManualDownload(req, res) {
     }
 
     // Fetch all recordings within the date range
-    const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay);
+    const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay, 'recordings');
     console.log(`Total meetings fetched: ${allRecordings.length}`);
 
-    // await downloadAttendance(accessToken, {uuid:});
-
+    // Process each meeting and its recordings
     for (const meeting of allRecordings) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
-        console.log({meeting})
-        // Ensure `recording_end` is not empty
-        // if (!meeting.recording_end || meeting.recording_end.trim() === "") {
-        //   console.warn(`Skipping meeting (${meeting.uuid}) due to missing recording_end.`);
-        //   continue;
-        // }
-
-        // Download attendance report
-        if (meeting?.uuid) {
-          await downloadAttendance(accessToken, meeting);
-          console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
-        }
-
-        // Download recordings
-        for (const file of meeting.recording_files) {
-          try {
-            const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
-            const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
-
-            const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
-
-            if (isDownloaded) {
-              const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
-              if (deleteResponse.success) {
-                console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
-              } else {
-                console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
-              }
-            } else {
-              console.error(`Failed to download recording: ${fileName}`);
-            }
-          } catch (fileError) {
-            console.error(`Error processing recording file (${file.id}):`, fileError.message);
-          }
-        }
+        await processMeetingRecordings(meeting, accessToken);
       } catch (meetingError) {
         console.error(`Error processing meeting (${meeting.uuid}):`, meetingError.message);
       }
@@ -170,6 +127,31 @@ async function handleManualDownload(req, res) {
       });
     } else {
       console.error('Cron job failed: Error downloading recordings.');
+    }
+  }
+}
+
+// Function to process each meeting's recordings
+async function processMeetingRecordings(meeting, accessToken) {
+  for (const file of meeting.recording_files) {
+    try {
+      const downloadUrl = `${file.download_url}?access_token=${accessToken}`;
+      const fileName = `${meeting.id}-${file.id}.${file.file_extension}`;
+
+      const isDownloaded = await downloadRecording(downloadUrl, fileName, file, meeting);
+
+      if (isDownloaded) {
+        const deleteResponse = await deleteRecording(accessToken, meeting.uuid, file.id);
+        if (deleteResponse.success) {
+          console.log(`Recording downloaded and deleted from Zoom cloud: ${fileName}`);
+        } else {
+          console.error(`Failed to delete recording: ${fileName}`, deleteResponse.error);
+        }
+      } else {
+        console.error(`Failed to download recording: ${fileName}`);
+      }
+    } catch (fileError) {
+      console.error(`Error processing recording file (${file.id}):`, fileError.message);
     }
   }
 }
@@ -262,15 +244,21 @@ async function handleManualDownloadByUser(req, res) {
   }
 }
 
-
-async function fetchAttendanceReportByMeetingId(req, res) {
+// Main function to fetch attendance report
+async function fetchAttendanceReport(req, res) {
   try {
-    const { meetingId, fromDate, toDate } = req.query;
-
-    // Validate input
-    if (!meetingId || !fromDate || !toDate) {
-      throw new Error('Missing required parameters: meetingId, fromDate, or toDate.');
+    // Validate required query parameters
+    const { fromDate, toDate } = req.query;
+    if (!fromDate || !toDate) {
+      console.warn('Missing required parameters: fromDate or toDate.');
+      return res.status(400).send({
+        message: 'Missing required parameters: fromDate or toDate.',
+      });
     }
+
+    // Validate and format the date range
+    const { startOfDay, endOfDay } = validateAndFormatDateRange(fromDate, toDate);
+    console.info(`Fetching attendance report from ${startOfDay} to ${endOfDay}`);
 
     // Fetch Zoom access token
     const accessToken = await getAccessToken();
@@ -278,11 +266,38 @@ async function fetchAttendanceReportByMeetingId(req, res) {
       throw new Error('Failed to retrieve Zoom access token.');
     }
 
-    await downloadAttendance(accessToken, {uuid:"ayubCckKREiaMAfkJgX1uQ%3D%3D", start_time: fromDate, end_time:toDate});
-    console.log(`Attendance downloaded for meeting: ${meeting.uuid}`);
+    // Fetch all meetings within the specified date range
+    console.info('Fetching meetings from Zoom...');
+    const allMeetings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay, 'meetings');
+    console.info(`Total meetings fetched: ${allMeetings.length}`);
 
+    // Process each meeting individually
+    for (const meeting of allMeetings) {
+      try {
+        console.info(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
+
+        // Ensure the meeting has a UUID before processing
+        if (meeting?.uuid) {
+          // Attempt to download the attendance data for the meeting
+          await downloadAttendance(accessToken, meeting);
+          console.info(`Attendance successfully downloaded for meeting: ${meeting.uuid}`);
+        } else {
+          console.warn(`Skipping meeting with missing UUID: ${meeting.topic}`);
+        }
+      } catch (meetingError) {
+        // Log specific error for each meeting
+        console.error(`Error processing meeting (${meeting.uuid}): ${meetingError.message}`);
+      }
+    }
+
+    // Send a success response back to the client
+    console.info('Attendance report successfully fetched and processed.');
+    res.status(200).send({
+      message: 'Attendance report successfully fetched and processed.',
+    });
 
   } catch (error) {
+    // Log the error and return a 500 status code
     console.error('Error fetching attendance report:', error.message);
     res.status(500).send({
       message: 'Internal Server Error while fetching attendance report.',
@@ -291,4 +306,4 @@ async function fetchAttendanceReportByMeetingId(req, res) {
   }
 }
 
-module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser, fetchAttendanceReportByMeetingId };
+module.exports = { handleWebhook, handleManualDownload, handleManualDownloadByUser, fetchAttendanceReport };

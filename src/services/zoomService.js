@@ -33,8 +33,8 @@ async function getAccessToken() {
 }
 
 // Fetch Zoom recordings
-async function fetchRecordings(accessToken, userId, fromDate, toDate) {
-  const baseUrl = `https://api.zoom.us/v2/users/me/recordings`;
+async function fetchRecordings(accessToken, userId, fromDate, toDate, API_URL) {
+  const baseUrl = `https://api.zoom.us/v2/users/${userId}/${API_URL}`;
   let allRecordings = [];
   let nextPageToken = null;
 
@@ -51,10 +51,10 @@ async function fetchRecordings(accessToken, userId, fromDate, toDate) {
           next_page_token: nextPageToken,
         },
       });
-      console.log('here')
+    
       
       const data = response.data;
-      console.log({data})
+      
       allRecordings = allRecordings.concat(data.meetings);
       nextPageToken = data.next_page_token;
     } while (nextPageToken);
@@ -126,155 +126,135 @@ async function downloadRecording(downloadUrl, fileName, file, meeting) {
   }
 }
 
+// Download Attendance Function
 async function downloadAttendance(accessToken, meeting) {
   try {
-    if (!meeting?.uuid || !meeting?.start_time) {
+    // Validate meeting object properties
+    if (!meeting?.id || !meeting?.start_time) {
       throw new Error('Invalid meeting object: Missing required properties.');
     }
 
-    const encodedMeetingId = encodeURIComponent(meeting.uuid);
     const recordingDate = meeting.start_time.split('T')[0];
     const year = recordingDate.split('-')[0];
     const formattedDate = moment(recordingDate).format('DD MMM YYYY');
     const formattedMonth = moment(recordingDate).format('MMM').toUpperCase();
-    const formattedStartTime = moment(meeting.start_time).format(
-      'DD/MM/YY hh:mm:ss A'
-    );
-    const formattedEndTime = moment(meeting.end_time).format(
-      'DD/MM/YY hh:mm:ss A'
-    );
+    const formattedStartTime = moment(meeting.start_time).format('DD/MM/YY hh:mm:ss A');
+    const formattedEndTime = meeting?.end_time ? moment(meeting.end_time).format('DD/MM/YY hh:mm:ss A') : '';
 
+    // Extract course code from topic or use default
     const courseCodeMatch = meeting?.topic?.match(/^[A-Za-z0-9]+/);
     const courseCode = courseCodeMatch ? courseCodeMatch[0] : 'UnknownCourse';
 
-    const url = `${credentials.zoomCloudApi}/report/meetings/${encodedMeetingId}/participants`;
-    const response = await axios.get(url, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    let nextPageToken = null;
+    const participants = [];
 
-    const participants = response.data.participants;
+    // Loop to handle pagination and fetch all participants
+    do {
+      const url = `https://api.zoom.us/v2/report/meetings/${meeting.id}/participants`;
+      console.log(`Requesting URL: ${url}`);
+
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: {
+          page_size: 100,  // Fetch up to 100 participants per page
+          next_page_token: nextPageToken,
+        },
+      });
+
+      // Append the participants from the current page
+      participants.push(...response.data.participants);
+
+      // Get nextPageToken for pagination
+      nextPageToken = response.data.next_page_token || null;
+    } while (nextPageToken); // Continue fetching until no nextPageToken exists
+
     if (!participants || participants.length === 0) {
-      console.log(`No participants found for meeting ${meeting.uuid}`);
+      console.log(`No participants found for meeting ${meeting.id}`);
       return;
     }
 
+    // Prepare folder for storing the report
     const folderName = `${courseCode} ${formattedDate}`;
-    const downloadsFolder = path.resolve(
-      __dirname,
-      `../downloads/Yr${year}/${formattedMonth}/${folderName}`
-    );
+    const downloadsFolder = path.resolve(__dirname, `../downloads/Yr${year}/${formattedMonth}/${folderName}`);
 
+    // Ensure the folder exists
     if (!fs.existsSync(downloadsFolder)) {
       fs.mkdirSync(downloadsFolder, { recursive: true });
     }
 
-    const csvFilePath = path.join(
-      downloadsFolder,
-      `Attendance_${courseCode} (${formattedDate}).csv`
-    );
+    // Path to save the CSV file
+    const csvFilePath = path.join(downloadsFolder, `Attendance_${courseCode} (${formattedDate}).csv`);
 
-    // Write meeting details at the top of the file
-    // const meetingDetails = [
-    //   ['Meeting ID', meeting.uuid],
-    //   ['Topic', meeting.topic],
-    //   ['User Email', meeting.host_email],
-    //   ['Duration (Minutes)', meeting.duration],
-    //   ['Start Time', formattedStartTime],
-    //   ['End Time', formattedEndTime],
-    //   ['Participants', participants.length],
-    //   [],
-    // ];
-
-    // fs.writeFileSync(
-    //   csvFilePath,
-    //   meetingDetails.map((detail) => detail.join(' : ')).join('\n') + '\n'
-    // );
-
-    // Group participants by email and sum the duration
+    // Group participants by email and sum the durations
     const uniqueParticipants = participants.reduce((acc, participant) => {
-      // Check if the email is already in the accumulator
-      const existingParticipant = acc.find(
-        (p) => p.user_email === participant.user_email
-      );
-
+      const existingParticipant = acc.find(p => p.user_email === participant.user_email);
       if (existingParticipant) {
-        // If the email already exists, sum up the duration
         existingParticipant.duration += participant.duration || 0;
       } else {
-        // Otherwise, add the participant to the accumulator
         acc.push({
           id: participant.id,
-          name: participant.name || "N/A",
-          user_email: participant.user_email || "N/A",
+          name: participant.name || 'N/A',
+          user_email: participant.user_email || 'N/A',
           duration: participant.duration || 0,
         });
       }
-
       return acc;
     }, []);
 
-    // Write the full CSV with meeting details and participants
+    // Prepare and write meeting details to CSV
     const csvWriter = createCSVWriter({
       path: csvFilePath,
       header: [
-        { id: "field1", title: "Title" }, // Empty field for formatting
-        { id: "field2", title: "Details" },
+        { id: 'field1', title: 'Title' },
+        { id: 'field2', title: 'Details' },
       ],
     });
 
     const meetingDetails = [
-      { field1: "Meeting ID", field2: meeting.uuid },
-      { field1: "Topic", field2: meeting.topic },
-      { field1: "User Email", field2: meeting.host_email },
-      { field1: "Duration (Minutes)", field2: Math.floor(meeting.duration / 60) },
-      { field1: "Start Time", field2: formattedStartTime },
-      { field1: "End Time", field2: formattedEndTime },
-      { field1: "Participants", field2: participants.length },
-      { field1: "", field2: "" }, // Blank row for separation
-      { field1: "", field2: "" }, // Blank row for separation
+      { field1: 'Meeting ID', field2: meeting.id },
+      { field1: 'Topic', field2: meeting.topic },
+      { field1: 'User Email', field2: meeting.host_email },
+      { field1: 'Duration (Minutes)', field2: meeting.duration },
+      { field1: 'Start Time', field2: formattedStartTime },
+      { field1: 'End Time', field2: formattedEndTime },
+      { field1: 'Participants', field2: participants.length },
+      { field1: '', field2: '' }, // Blank rows for formatting
+      { field1: '', field2: '' },
     ];
 
     await csvWriter.writeRecords(meetingDetails);
 
-    // Append participant data
+    // Write participant details to the CSV
     const participantCsvWriter = createCSVWriter({
       path: csvFilePath,
-      append: true, // Append to the file after details
+      append: true, // Append to existing file after meeting details
       header: [
-        { id: "name", title: "Name (Original Name)" },
-        { id: "user_email", title: "User Email" },
-        { id: "duration", title: "Total Duration (Minutes)" },
-        { id: "guest", title: "Guest" },
+        { id: 'name', title: 'Name (Original Name)' },
+        { id: 'user_email', title: 'User Email' },
+        { id: 'duration', title: 'Total Duration (Minutes)' },
+        { id: 'guest', title: 'Guest' },
       ],
     });
-   
-    const participantHeaders = "Name (Original Name),User Email,Total Duration (Minutes),Guest\n";
-fs.appendFileSync(csvFilePath, participantHeaders);
 
-    const records = uniqueParticipants.map((participant) => ({
+    // Map participant data to match CSV structure
+    const participantRecords = uniqueParticipants.map((participant) => ({
       name: participant.name || 'N/A',
       user_email: participant.user_email || 'N/A',
       duration: Math.floor(participant.duration / 60) + 1 || 0,
       guest: meeting.host_id === participant.id ? 'No' : 'Yes',
     }));
 
-
-    await participantCsvWriter.writeRecords(records);
+    // Write participant records to CSV
+    await participantCsvWriter.writeRecords(participantRecords);
 
     console.log(`Attendance report saved at: ${csvFilePath}`);
   } catch (error) {
-    console.error(
-      `Error downloading attendance for meeting "${meeting?.topic || 'N/A'}":`,
-      error.message
-    );
+    console.error(`Error downloading attendance for meeting "${meeting?.topic || 'N/A'}":`, error.message);
     throw new Error('Failed to download and process attendance data.');
   }
 }
 
-
-async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
+async function fetchAllUserRecordings(accessToken, fromDate, toDate, API_URL) {
   const url = `https://api.zoom.us/v2/users`;
   let allUserRecordings = [];
 
@@ -286,8 +266,9 @@ async function fetchAllUserRecordings(accessToken, fromDate, toDate) {
     });
 
     const users = response?.data?.users || [];
+    
     for (const user of users) {
-      const userRecordings = await fetchRecordings(accessToken, user.email, fromDate, toDate);
+      const userRecordings = await fetchRecordings(accessToken, user.email, fromDate, toDate, API_URL);
       allUserRecordings = allUserRecordings.concat(userRecordings);
     }
 
