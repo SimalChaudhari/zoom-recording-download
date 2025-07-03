@@ -2,12 +2,15 @@
 // Add or remove email addresses as needed
 // Supports wildcard patterns like: iscacpd*@isca.org.sg
 
-const allowedHosts = [
-  'iscacpd*@isca.org.sg',  // Wildcard pattern for all iscacpd accounts
-  // Add more specific hosts or wildcard patterns here
-  // 'specific.user@isca.org.sg',
-  // 'another.pattern*@isca.org.sg',
-];
+const { getActiveTenant } = require('./tenants');
+
+// Get allowed hosts from active tenant configuration
+function getAllowedHostsList() {
+  const activeTenant = getActiveTenant();
+  return activeTenant.config.allowedHosts || [];
+}
+
+const allowedHosts = getAllowedHostsList();
 
 module.exports = {
   allowedHosts,

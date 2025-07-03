@@ -7,6 +7,7 @@ const {
 } = require('../controllers/zoomController');
 const validateRequest = require('../middlewares/validateRequest'); // Custom validation middleware
 const { getAllowedHosts, testPattern } = require('../config/allowedHosts');
+const { getAllTenants, getActiveTenant, setActiveTenant } = require('../config/tenants');
 
 const router = express.Router();
 
@@ -77,6 +78,56 @@ router.get('/test-host', (req, res) => {
     console.error('Error testing host pattern:', error.message);
     res.status(500).json({
       message: 'Internal Server Error while testing pattern',
+      error: error.message
+    });
+  }
+});
+
+// Route to get all tenants
+router.get('/tenants', (req, res) => {
+  try {
+    const tenants = getAllTenants();
+    const activeTenant = getActiveTenant();
+    
+    res.status(200).json({
+      message: 'Tenants retrieved successfully',
+      tenants: tenants,
+      activeTenant: {
+        key: activeTenant.key,
+        name: activeTenant.config.name
+      }
+    });
+  } catch (error) {
+    console.error('Error retrieving tenants:', error.message);
+    res.status(500).json({
+      message: 'Internal Server Error while retrieving tenants',
+      error: error.message
+    });
+  }
+});
+
+// Route to switch active tenant
+router.post('/switch-tenant', (req, res) => {
+  try {
+    const { tenantKey } = req.body;
+    
+    if (!tenantKey) {
+      return res.status(400).json({
+        message: 'tenantKey is required in request body',
+        example: { tenantKey: 'new' }
+      });
+    }
+    
+    setActiveTenant(tenantKey);
+    
+    res.status(200).json({
+      message: 'Tenant switched successfully',
+      activeTenant: tenantKey
+    });
+  } catch (error) {
+    console.error('Error switching tenant:', error.message);
+    res.status(500).json({
+      message: 'Internal Server Error while switching tenant',
       error: error.message
     });
   }
