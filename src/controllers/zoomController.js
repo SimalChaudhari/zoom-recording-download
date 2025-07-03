@@ -1,8 +1,22 @@
-
 const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording } = require('../services/zoomService');
 const { getAccessToken } = require('../utils/apiClient');
 const moment = require('moment');
 const { validateAndFormatDateRange } = require('../utils/helpers');
+const { isAllowedHost: checkAllowedHost } = require('../config/allowedHosts');
+
+// Function to check if meeting is from allowed host
+function isAllowedHost(meeting) {
+  const meetingHost = meeting.host_email || meeting.host_id;
+  
+  // Check if the meeting host is in the allowed list
+  const isAllowed = checkAllowedHost(meetingHost);
+  
+  if (!isAllowed) {
+    console.log(`Skipping meeting from unauthorized host: ${meetingHost} (Topic: ${meeting.topic})`);
+  }
+  
+  return isAllowed;
+}
 
 async function handleWebhook(req, res) {
   try {
@@ -22,6 +36,12 @@ async function handleWebhook(req, res) {
       // Validate meeting data
       if (!meeting.uuid || !meeting.recording_files || meeting.recording_files.length === 0) {
         throw new Error('Invalid meeting data: Missing UUID or recording files.');
+      }
+
+      // Check if meeting is from allowed host
+      if (!isAllowedHost(meeting)) {
+        console.log(`Skipping webhook for unauthorized host: ${meeting.host_email || meeting.host_id}`);
+        return res.status(200).send('Webhook processed successfully (unauthorized host skipped).');
       }
 
       // Fetch Zoom access token
@@ -100,8 +120,12 @@ async function handleManualDownload(req, res) {
     const allRecordings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay, 'recordings');
     console.log(`Total meetings fetched: ${allRecordings.length}`);
 
+    // Filter recordings by allowed hosts
+    const allowedRecordings = allRecordings.filter(meeting => isAllowedHost(meeting));
+    console.log(`Meetings from allowed hosts: ${allowedRecordings.length}`);
+
     // Process each meeting and its recordings
-    for (const meeting of allRecordings) {
+    for (const meeting of allowedRecordings) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
         await processMeetingRecordings(meeting, accessToken);
@@ -187,7 +211,11 @@ async function handleManualDownloadByUser(req, res) {
     const recordings = await fetchRecordings(accessToken, userId, startDate, endDate);
     console.log(`Total meetings fetched for user ${userId}: ${recordings.length}`);
 
-    for (const meeting of recordings) {
+    // Filter recordings by allowed hosts
+    const allowedRecordings = recordings.filter(meeting => isAllowedHost(meeting));
+    console.log(`Meetings from allowed hosts for user ${userId}: ${allowedRecordings.length}`);
+
+    for (const meeting of allowedRecordings) {
       try {
         console.log(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
 
@@ -271,8 +299,12 @@ async function fetchAttendanceReport(req, res) {
     const allMeetings = await fetchAllUserRecordings(accessToken, startOfDay, endOfDay, 'meetings');
     console.info(`Total meetings fetched: ${allMeetings.length}`);
 
+    // Filter meetings by allowed hosts
+    const allowedMeetings = allMeetings.filter(meeting => isAllowedHost(meeting));
+    console.info(`Meetings from allowed hosts: ${allowedMeetings.length}`);
+
     // Process each meeting individually
-    for (const meeting of allMeetings) {
+    for (const meeting of allowedMeetings) {
       try {
         console.info(`Processing meeting: ${meeting.topic} (${meeting.uuid})`);
 

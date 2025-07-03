@@ -6,6 +6,7 @@ const {
   fetchAttendanceReport,
 } = require('../controllers/zoomController');
 const validateRequest = require('../middlewares/validateRequest'); // Custom validation middleware
+const { getAllowedHosts } = require('../config/allowedHosts');
 
 const router = express.Router();
 
@@ -31,5 +32,23 @@ router.get(
   validateRequest(['fromDate', 'toDate'], 'query'), // Require query parameters
   fetchAttendanceReport
 );
+
+// Route to get list of allowed hosts
+router.get('/allowed-hosts', (req, res) => {
+  try {
+    const hosts = getAllowedHosts();
+    res.status(200).json({
+      message: 'Allowed hosts retrieved successfully',
+      allowedHosts: hosts,
+      count: hosts.length
+    });
+  } catch (error) {
+    console.error('Error retrieving allowed hosts:', error.message);
+    res.status(500).json({
+      message: 'Internal Server Error while retrieving allowed hosts',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;
