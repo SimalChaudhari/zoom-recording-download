@@ -14,10 +14,20 @@ The list of allowed hosts is maintained in the `src/config/allowedHosts.js` file
 
 ```javascript
 const allowedHosts = [
-  'iscacpd5@isca.org.sg',
-  // Add more hosts here
+  'iscacpd*@isca.org.sg',  // Wildcard pattern for all iscacpd accounts
+  // Add more specific hosts or wildcard patterns here
+  // 'specific.user@isca.org.sg',
+  // 'another.pattern*@isca.org.sg',
 ];
 ```
+
+**Wildcard Support:**
+- `*` - Matches any sequence of characters
+- `?` - Matches any single character
+- Examples:
+  - `iscacpd*@isca.org.sg` - Matches all iscacpd accounts
+  - `user*@domain.com` - Matches all users with prefix "user"
+  - `test?@example.com` - Matches test1@example.com, test2@example.com, etc.
 
 #### To add new hosts:
 1. Open the `src/config/allowedHosts.js` file
@@ -32,8 +42,9 @@ const allowedHosts = [
 - `GET /download-by-user` - Downloads recordings for a specific user
 - `GET /fetch-attendance-report` - Downloads attendance reports
 
-#### New Endpoint
+#### New Endpoints
 - `GET /allowed-hosts` - Returns the list of allowed hosts
+- `GET /test-host?email=user@example.com` - Test if an email matches any allowed pattern
 
 ### Usage Examples
 
@@ -46,8 +57,24 @@ Response:
 ```json
 {
   "message": "Allowed hosts retrieved successfully",
-  "allowedHosts": ["iscacpd5@isca.org.sg"],
+  "allowedHosts": ["iscacpd*@isca.org.sg"],
   "count": 1
+}
+```
+
+#### To test if an email matches any pattern:
+```bash
+curl "http://localhost:3001/zoom/test-host?email=iscacpd5@isca.org.sg"
+```
+
+Response:
+```json
+{
+  "message": "Pattern test completed",
+  "email": "iscacpd5@isca.org.sg",
+  "isAllowed": true,
+  "matchingPatterns": ["iscacpd*@isca.org.sg"],
+  "allPatterns": ["iscacpd*@isca.org.sg"]
 }
 ```
 

@@ -6,7 +6,7 @@ const {
   fetchAttendanceReport,
 } = require('../controllers/zoomController');
 const validateRequest = require('../middlewares/validateRequest'); // Custom validation middleware
-const { getAllowedHosts } = require('../config/allowedHosts');
+const { getAllowedHosts, testPattern } = require('../config/allowedHosts');
 
 const router = express.Router();
 
@@ -46,6 +46,37 @@ router.get('/allowed-hosts', (req, res) => {
     console.error('Error retrieving allowed hosts:', error.message);
     res.status(500).json({
       message: 'Internal Server Error while retrieving allowed hosts',
+      error: error.message
+    });
+  }
+});
+
+// Route to test if an email matches any allowed pattern
+router.get('/test-host', (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({
+        message: 'Email parameter is required',
+        example: '/test-host?email=iscacpd5@isca.org.sg'
+      });
+    }
+    
+    const matches = testPattern(email);
+    const isAllowed = matches.length > 0;
+    
+    res.status(200).json({
+      message: 'Pattern test completed',
+      email: email,
+      isAllowed: isAllowed,
+      matchingPatterns: matches,
+      allPatterns: getAllowedHosts()
+    });
+  } catch (error) {
+    console.error('Error testing host pattern:', error.message);
+    res.status(500).json({
+      message: 'Internal Server Error while testing pattern',
       error: error.message
     });
   }
