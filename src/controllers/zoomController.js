@@ -1,12 +1,33 @@
-const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording } = require('../services/zoomService');
+const { fetchAllUserRecordings, fetchRecordings, downloadRecording, downloadAttendance, deleteRecording, getUserByHostId } = require('../services/zoomService');
 const { getAccessToken } = require('../utils/apiClient');
 const moment = require('moment');
 const { validateAndFormatDateRange } = require('../utils/helpers');
 const { isAllowedHost: checkAllowedHost } = require('../config/allowedHosts');
 
 // Function to check if meeting is from allowed host
-function isAllowedHost(meeting) {
-  const meetingHost = meeting.host_email || meeting.host_id;
+async function isAllowedHost(meeting) {
+  let meetingHost = meeting.host_email;
+  
+  // If host_email is not available, fetch user details by host_id
+  if (!meetingHost && meeting.host_id) {
+    try {
+      const accessToken = await getAccessToken();
+      const userDetails = await getUserByHostId(accessToken, meeting.host_id);
+      if (userDetails) {
+        meetingHost = userDetails.email;
+        console.log(`Fetched email for host_id ${meeting.host_id}: ${meetingHost}`);
+      }
+    } catch (error) {
+      console.error(`Error fetching user details for host_id ${meeting.host_id}:`, error.message);
+    }
+  }
+  
+  // If still no email, use host_id as fallback
+  if (!meetingHost) {
+    meetingHost = meeting.host_id;
+  }
+  
+  console.log(`Checking host: ${meetingHost} for meeting: ${meeting.topic}`);
   
   // Check if the meeting host is in the allowed list
   const isAllowed = checkAllowedHost(meetingHost);
@@ -39,7 +60,7 @@ async function handleWebhook(req, res) {
       }
 
       // Check if meeting is from allowed host
-      if (!isAllowedHost(meeting)) {
+      if (!(await isAllowedHost(meeting))) {
         console.log(`Skipping webhook for unauthorized host: ${meeting.host_email || meeting.host_id}`);
         return res.status(200).send('Webhook processed successfully (unauthorized host skipped).');
       }
@@ -121,7 +142,12 @@ async function handleManualDownload(req, res) {
     console.log(`Total meetings fetched: ${allRecordings.length}`);
 
     // Filter recordings by allowed hosts
-    const allowedRecordings = allRecordings.filter(meeting => isAllowedHost(meeting));
+    const allowedRecordings = [];
+    for (const meeting of allRecordings) {
+      if (await isAllowedHost(meeting)) {
+        allowedRecordings.push(meeting);
+      }
+    }
     console.log(`Meetings from allowed hosts: ${allowedRecordings.length}`);
 
     // Process each meeting and its recordings
@@ -212,7 +238,12 @@ async function handleManualDownloadByUser(req, res) {
     console.log(`Total meetings fetched for user ${userId}: ${recordings.length}`);
 
     // Filter recordings by allowed hosts
-    const allowedRecordings = recordings.filter(meeting => isAllowedHost(meeting));
+    const allowedRecordings = [];
+    for (const meeting of recordings) {
+      if (await isAllowedHost(meeting)) {
+        allowedRecordings.push(meeting);
+      }
+    }
     console.log(`Meetings from allowed hosts for user ${userId}: ${allowedRecordings.length}`);
 
     for (const meeting of allowedRecordings) {
@@ -300,7 +331,12 @@ async function fetchAttendanceReport(req, res) {
     console.info(`Total meetings fetched: ${allMeetings.length}`);
 
     // Filter meetings by allowed hosts
-    const allowedMeetings = allMeetings.filter(meeting => isAllowedHost(meeting));
+    const allowedMeetings = [];
+    for (const meeting of allMeetings) {
+      if (await isAllowedHost(meeting)) {
+        allowedMeetings.push(meeting);
+      }
+    }
     console.info(`Meetings from allowed hosts: ${allowedMeetings.length}`);
 
     // Process each meeting individually

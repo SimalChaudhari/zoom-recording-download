@@ -254,6 +254,22 @@ async function downloadAttendance(accessToken, meeting) {
   }
 }
 
+// Function to get user details by host_id
+async function getUserByHostId(accessToken, hostId) {
+  try {
+    const url = `https://api.zoom.us/v2/users/${hostId}`;
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching user details for host_id ${hostId}:`, error.response?.data || error.message);
+    return null;
+  }
+}
+
 async function fetchAllUserRecordings(accessToken, fromDate, toDate, API_URL) {
   const url = `https://api.zoom.us/v2/users`;
   let allUserRecordings = [];
@@ -297,4 +313,4 @@ async function deleteRecording(accessToken, meetingUuid, fileId) {
 }
 
 
-module.exports = { getAccessToken, fetchRecordings, downloadRecording, downloadAttendance, fetchAllUserRecordings, deleteRecording };
+module.exports = { getAccessToken, fetchRecordings, downloadRecording, downloadAttendance, fetchAllUserRecordings, deleteRecording, getUserByHostId };

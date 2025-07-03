@@ -39,7 +39,7 @@ const allowedHosts = [
 
 #### To view the list of allowed hosts:
 ```bash
-curl http://localhost:3000/allowed-hosts
+curl http://localhost:3001/allowed-hosts
 ```
 
 Response:

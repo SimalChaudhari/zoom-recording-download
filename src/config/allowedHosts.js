@@ -3,6 +3,7 @@
 
 const allowedHosts = [
   'iscacpd5@isca.org.sg',
+  'iscacpd8@isca.org.sg',
   // Add more allowed hosts here if needed
   // 'another.host@isca.org.sg',
   // 'third.host@isca.org.sg',
