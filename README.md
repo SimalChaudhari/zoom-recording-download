@@ -2,6 +2,42 @@
 
 This project is designed to automatically download Zoom meeting recordings.
 
+## Multi-Tenant Support
+
+### Overview
+The system now supports multiple Zoom tenant accounts. This allows you to:
+- Switch between different Zoom tenants
+- Use different API credentials for each tenant
+- Configure different allowed hosts for each tenant
+- Handle tenant migrations seamlessly
+
+### Configuration
+
+#### Environment Variables
+Create a `.env` file based on `env.example`:
+
+```bash
+# Active Tenant Selection
+USE_OLD_TENANT=false
+USE_NEW_TENANT=true
+
+# Old Tenant Configuration
+ZOOM_CLIENT_ID_OLD=your_old_client_id
+ZOOM_CLIENT_SECRET_OLD=your_old_client_secret
+ZOOM_ACCOUNT_ID_OLD=your_old_account_id
+
+# New Tenant Configuration
+ZOOM_CLIENT_ID_NEW=your_new_client_id
+ZOOM_CLIENT_SECRET_NEW=your_new_client_secret
+ZOOM_ACCOUNT_ID_NEW=your_new_account_id
+```
+
+#### Tenant Management
+- **Old Tenant**: Current tenant with existing recordings
+- **New Tenant**: Merged tenant with both old and new users
+- Only one tenant can be active at a time
+- Switch tenants using API endpoints or environment variables
+
 ## New Feature: Host Filtering
 
 ### Overview
@@ -45,12 +81,14 @@ const allowedHosts = [
 #### New Endpoints
 - `GET /allowed-hosts` - Returns the list of allowed hosts
 - `GET /test-host?email=user@example.com` - Test if an email matches any allowed pattern
+- `GET /tenants` - Returns all configured tenants and active tenant
+- `POST /switch-tenant` - Switch to a different tenant
 
 ### Usage Examples
 
 #### To view the list of allowed hosts:
 ```bash
-curl http://localhost:3001/allowed-hosts
+curl http://localhost:3000/allowed-hosts
 ```
 
 Response:
@@ -64,7 +102,7 @@ Response:
 
 #### To test if an email matches any pattern:
 ```bash
-curl "http://localhost:3001/zoom/test-host?email=iscacpd5@isca.org.sg"
+curl "http://localhost:3000/zoom/test-host?email=iscacpd5@isca.org.sg"
 ```
 
 Response:
@@ -75,6 +113,51 @@ Response:
   "isAllowed": true,
   "matchingPatterns": ["iscacpd*@isca.org.sg"],
   "allPatterns": ["iscacpd*@isca.org.sg"]
+}
+```
+
+#### To view all tenants:
+```bash
+curl http://localhost:3000/zoom/tenants
+```
+
+Response:
+```json
+{
+  "message": "Tenants retrieved successfully",
+  "tenants": [
+    {
+      "key": "old",
+      "name": "Old Tenant (Current)",
+      "isActive": false,
+      "accountId": "GrjrYUJ0R72wxMZUoDmgpg"
+    },
+    {
+      "key": "new",
+      "name": "New Tenant (Merged)",
+      "isActive": true,
+      "accountId": "your_new_account_id"
+    }
+  ],
+  "activeTenant": {
+    "key": "new",
+    "name": "New Tenant (Merged)"
+  }
+}
+```
+
+#### To switch to a different tenant:
+```bash
+curl -X POST http://localhost:3000/zoom/switch-tenant \
+  -H "Content-Type: application/json" \
+  -d '{"tenantKey": "old"}'
+```
+
+Response:
+```json
+{
+  "message": "Tenant switched successfully",
+  "activeTenant": "old"
 }
 ```
 
